@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Nexus Design System — adapted for dark-first data tool ─────────────── */
+:root {
+  --background: 220 14% 96%;
+  --foreground: 220 10% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 10% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 10% 12%;
+  --primary: 195 85% 28%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 10% 92%;
+  --secondary-foreground: 220 10% 20%;
+  --muted: 220 10% 92%;
+  --muted-foreground: 220 5% 50%;
+  --accent: 195 85% 28%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 8% 84%;
+  --input: 220 8% 84%;
+  --ring: 195 85% 28%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 220 18% 9%;
+  --foreground: 220 5% 88%;
+  --card: 220 16% 12%;
+  --card-foreground: 220 5% 88%;
+  --popover: 220 16% 12%;
+  --popover-foreground: 220 5% 88%;
+  --primary: 188 55% 52%;
+  --primary-foreground: 220 18% 9%;
+  --secondary: 220 12% 18%;
+  --secondary-foreground: 220 5% 75%;
+  --muted: 220 12% 18%;
+  --muted-foreground: 220 5% 50%;
+  --accent: 188 55% 52%;
+  --accent-foreground: 220 18% 9%;
+  --destructive: 0 60% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 10% 22%;
+  --input: 220 10% 22%;
+  --ring: 188 55% 52%;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+code, pre, .mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+}
+
+/* Source badges */
+.badge-google  { background: #4285f420; color: #1a73e8; border: 1px solid #4285f440; }
+.badge-osm     { background: #7ab64820; color: #4a8c2a; border: 1px solid #7ab64840; }
+.badge-gelbeseiten { background: #f9d00020; color: #b8820a; border: 1px solid #f9d00040; }
+.dark .badge-google  { background: #4285f425; color: #81b4fb; }
+.dark .badge-osm     { background: #7ab64825; color: #9ede78; }
+.dark .badge-gelbeseiten { background: #f9d00025; color: #fcd04a; }
+
+/* Table styles */
+.biz-table { width: 100%; border-collapse: collapse; }
+.biz-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.biz-table td, .biz-table th { padding: 0.625rem 0.875rem; border-bottom: 1px solid hsl(var(--border)); text-align: left; }
+.biz-table tr:hover { background: hsl(var(--muted) / 0.5); }
+.biz-table td:first-child { font-weight: 500; }
+
+/* Scrollable table wrapper */
+.table-scroll { overflow-x: auto; border-radius: 0.5rem; border: 1px solid hsl(var(--border)); }
