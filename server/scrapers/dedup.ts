@@ -94,8 +94,8 @@ export function deduplicateBusinesses(businesses: ScrapedBusiness[]): DedupResul
         }
       }
 
-      // Threshold: 0.65 = likely duplicate
-      if (score >= 0.65 || nameSim >= 0.92) {
+      // Threshold: 0.75 = likely duplicate (raised to keep more results)
+      if (score >= 0.75 || nameSim >= 0.95) {
         isDuplicate = true;
         duplicates.push({ business: biz, duplicateOf: existing });
 

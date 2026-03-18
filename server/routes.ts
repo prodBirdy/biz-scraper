@@ -77,15 +77,26 @@ export function registerRoutes(httpServer: Server, app: Express) {
     (async () => {
       try {
         const allResults: ScrapedBusiness[] = [];
+        const sourceResults: Record<string, number> = {};
+
+        console.log(`\n🔍 Starting search for "${query}" in "${location}"`);
+        console.log(`📊 Sources: ${sources.join(", ")}\n`);
 
         const tasks = sources.map(async (src) => {
           try {
-            if (src === "google") return await scrapeGoogle(query, location);
-            if (src === "osm") return await scrapeOSM(query, location);
-            if (src === "gelbeseiten") return await scrapeGelbeSeiten(query, location);
-            return [];
+            console.log(`🚀 Starting ${src} scraper...`);
+            let results: ScrapedBusiness[] = [];
+            
+            if (src === "google") results = await scrapeGoogle(query, location);
+            else if (src === "osm") results = await scrapeOSM(query, location);
+            else if (src === "gelbeseiten") results = await scrapeGelbeSeiten(query, location);
+            
+            sourceResults[src] = results.length;
+            console.log(`✅ ${src}: Found ${results.length} businesses`);
+            return results;
           } catch (e) {
-            console.error(`Scraper ${src} failed:`, e);
+            console.error(`❌ Scraper ${src} failed:`, e);
+            sourceResults[src] = 0;
             return [];
           }
         });
@@ -93,8 +104,17 @@ export function registerRoutes(httpServer: Server, app: Express) {
         const results = await Promise.all(tasks);
         for (const r of results) allResults.push(...r);
 
+        console.log(`\n📈 Results by source:`);
+        for (const [src, count] of Object.entries(sourceResults)) {
+          console.log(`   ${src}: ${count}`);
+        }
+        console.log(`   Total before deduplication: ${allResults.length}\n`);
+
         // Deduplicate
         const { unique, totalMerged } = deduplicateBusinesses(allResults);
+
+        console.log(`🧹 Deduplication: Removed ${totalMerged} duplicates`);
+        console.log(`💾 Saving ${unique.length} unique businesses...\n`);
 
         // Persist
         const toInsert = unique.map((b) => ({
@@ -123,7 +143,10 @@ export function registerRoutes(httpServer: Server, app: Express) {
           duplicatesRemoved: totalMerged,
           finishedAt: new Date().toISOString(),
         });
+
+        console.log(`✨ Search completed! Found ${unique.length} unique businesses\n`);
       } catch (err) {
+        console.error(`💥 Search failed:`, err);
         await storage.updateSearchJob(job.id, {
           status: "error",
           errorMessage: String(err),

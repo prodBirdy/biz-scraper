@@ -44,46 +44,11 @@ const CITY_BOUNDING_BOXES: Record<string, BoundingBox> = {
   mannheim: { minLon: 8.4148, minLat: 49.4096, maxLon: 8.5893, maxLat: 49.5906 },
 };
 
-// Mapping: German branch keywords → OSM tag filter
-const BRANCH_OSM_FILTERS: Array<{ keywords: string[]; tagFilter: string }> = [
-  {
-    keywords: ["hausverwaltung", "immobilien", "wohnungsverwaltung", "property", "verwaltung"],
-    tagFilter: `["office"~"property_management|estate_agent|real_estate",i]`,
-  },
-  { keywords: ["arzt", "allgemeinmedizin", "hausarzt"], tagFilter: `["amenity"="doctors"]` },
-  { keywords: ["zahnarzt"], tagFilter: `["amenity"="dentist"]` },
-  { keywords: ["apotheke"], tagFilter: `["amenity"="pharmacy"]` },
-  { keywords: ["restaurant", "gaststätte", "bistro", "imbiss"], tagFilter: `["amenity"="restaurant"]` },
-  { keywords: ["bäckerei", "bäcker"], tagFilter: `["shop"="bakery"]` },
-  { keywords: ["friseur", "frisör"], tagFilter: `["shop"="hairdresser"]` },
-  { keywords: ["rechtsanwalt", "anwalt"], tagFilter: `["amenity"="lawyer"]` },
-  { keywords: ["steuerberater"], tagFilter: `["office"="tax_advisor"]` },
-  { keywords: ["versicherung"], tagFilter: `["office"="insurance"]` },
-  { keywords: ["bank", "sparkasse", "volksbank", "commerzbank"], tagFilter: `["amenity"="bank"]` },
-  { keywords: ["hotel"], tagFilter: `["tourism"="hotel"]` },
-  { keywords: ["supermarkt", "lebensmittel"], tagFilter: `["shop"="supermarket"]` },
-  { keywords: ["schule", "gymnasium"], tagFilter: `["amenity"="school"]` },
-  { keywords: ["kita", "kindergarten"], tagFilter: `["amenity"="kindergarten"]` },
-  { keywords: ["tischler", "tischlerei", "schreiner"], tagFilter: `["craft"="carpenter"]` },
-  { keywords: ["elektriker", "elektro"], tagFilter: `["craft"="electrician"]` },
-  { keywords: ["autowerkstatt", "kfz"], tagFilter: `["shop"="car_repair"]` },
-];
-
-function inferOsmTagFilter(query: string): string | null {
-  const lower = query.toLowerCase();
-  for (const entry of BRANCH_OSM_FILTERS) {
-    if (entry.keywords.some((kw) => lower.includes(kw))) {
-      return entry.tagFilter;
-    }
-  }
-  return null;
-}
-
 // Multiple Overpass endpoints for fallback (prioritize faster ones)
 const OVERPASS_ENDPOINTS = [
   "https://overpass.kumi.systems/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-  "https://overpass-api.de/api/interpreter", // Often rate limited
+  "https://overpass-api.de/api/interpreter",
 ];
 
 async function runOverpassQuerySingle(endpoint: string, oql: string, timeoutMs: number): Promise<OverpassResponse> {
@@ -134,7 +99,6 @@ async function runOverpassQuery(oql: string, timeoutMs: number = 60000): Promise
 
   const results = await Promise.all(promises);
   
-  // Find first successful result
   const success = results.find(r => r.result !== null);
   if (success) {
     if (results.some(r => r.error && r.endpoint !== success.endpoint)) {
@@ -143,7 +107,6 @@ async function runOverpassQuery(oql: string, timeoutMs: number = 60000): Promise
     return success.result!;
   }
 
-  // All failed
   const errors = results.map(r => `${r.endpoint}: ${r.error instanceof Error ? r.error.message : r.error}`).join('; ');
   throw new Error(`All Overpass endpoints failed: ${errors}`);
 }
@@ -153,8 +116,8 @@ async function runOverpassQuery(oql: string, timeoutMs: number = 60000): Promise
  */
 function splitBoundingBox(
   bbox: BoundingBox, 
-  numTilesX: number = 4, 
-  numTilesY: number = 4
+  numTilesX: number = 6, 
+  numTilesY: number = 6
 ): BoundingBox[] {
   const tiles: BoundingBox[] = [];
   const lonStep = (bbox.maxLon - bbox.minLon) / numTilesX;
@@ -175,92 +138,181 @@ function splitBoundingBox(
 }
 
 /**
- * Build Overpass query for a specific bounding box
+ * Build Overpass query for name-based search
  */
-function buildBBoxQuery(
+function buildNameQuery(
   bbox: BoundingBox, 
-  tagFilter: string | null, 
-  escapedQuery: string
+  namePatterns: string[],
+  limit: number = 200
 ): string {
   const bboxStr = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  const patterns = namePatterns.map(p => `"${p}"`).join(',');
   
-  if (tagFilter) {
-    return `
-[out:json][timeout:15];
+  return `
+[out:json][timeout:20];
 (
-  node${tagFilter}(${bboxStr});
-  way${tagFilter}(${bboxStr});
+  node["name"~"${patterns}",i]["office"](${bboxStr});
+  way["name"~"${patterns}",i]["office"](${bboxStr});
+  node["name"~"${patterns}",i]["shop"](${bboxStr});
+  way["name"~"${patterns}",i]["shop"](${bboxStr});
 );
-out center tags 100;
+out center tags ${limit};
 `;
-  } else {
-    return `
-[out:json][timeout:15];
-(
-  node["name"~"${escapedQuery}",i]["office"](${bboxStr});
-  node["name"~"${escapedQuery}",i]["amenity"](${bboxStr});
-  node["name"~"${escapedQuery}",i]["shop"](${bboxStr});
-  way["name"~"${escapedQuery}",i]["office"](${bboxStr});
-  way["name"~"${escapedQuery}",i]["amenity"](${bboxStr});
-);
-out center tags 100;
-`;
-  }
 }
 
 /**
- * Execute queries for multiple tiles with concurrency control
+ * Build Overpass query for tag-based search
  */
-async function queryTilesWithConcurrency(
+function buildTagQuery(
+  bbox: BoundingBox,
+  limit: number = 200
+): string {
+  const bboxStr = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  
+  return `
+[out:json][timeout:20];
+(
+  node["office"="property_management"](${bboxStr});
+  way["office"="property_management"](${bboxStr});
+  node["office"="estate_agent"](${bboxStr});
+  way["office"="estate_agent"](${bboxStr});
+  node["office"="real_estate"](${bboxStr});
+  way["office"="real_estate"](${bboxStr});
+  node["office"="property"](${bboxStr});
+  way["office"="property"](${bboxStr});
+);
+out center tags ${limit};
+`;
+}
+
+/**
+ * Build Overpass query for generic office search with filtering
+ */
+function buildGenericOfficeQuery(
+  bbox: BoundingBox,
+  limit: number = 200
+): string {
+  const bboxStr = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  
+  return `
+[out:json][timeout:25];
+(
+  node["office"]["name"](${bboxStr});
+  way["office"]["name"](${bboxStr});
+);
+out center tags ${limit};
+`;
+}
+
+/**
+ * Check if a business name indicates property management
+ */
+function isPropertyManagement(name: string): boolean {
+  const keywords = [
+    'hausverwaltung', 'verwaltung', 'immobilien', 'wohnungsverwaltung',
+    'siedler', 'mieter', 'eigentümer', 'wohnungseigentümer', 'wohneigentum',
+    'wohnungsbau', 'wohnungsgenossenschaft', 'wohnungsgesellschaft',
+    'bauverein', 'baugenossenschaft', 'baugesellschaft',
+    'grundstück', 'grundstücksverwaltung', 'grundstücksgesellschaft',
+    'liegenschaft', 'liegenschaftsverwaltung',
+    'property', 'real estate', 'estate', 'wohnen',
+  ];
+  
+  const lowerName = name.toLowerCase();
+  return keywords.some(kw => lowerName.includes(kw));
+}
+
+/**
+ * Execute queries for multiple tiles with multiple strategies
+ */
+async function queryTilesMultiStrategy(
   tiles: BoundingBox[],
-  tagFilter: string | null,
-  escapedQuery: string,
-  concurrency: number = 1
+  query: string,
+  concurrency: number = 3
 ): Promise<OverpassElement[]> {
   const allElements: OverpassElement[] = [];
   const seenIds = new Set<number>();
   
-  console.log(`OSM: Querying ${tiles.length} tiles sequentially with delays...`);
+  // Determine search patterns based on query
+  const queryLower = query.toLowerCase();
+  let namePatterns: string[] = [];
   
-  // Process tiles sequentially with longer delays to avoid rate limiting
-  for (let i = 0; i < tiles.length; i++) {
-    const tile = tiles[i];
-    const tileNum = i + 1;
+  if (queryLower.includes('hausverwaltung') || queryLower.includes('verwaltung')) {
+    namePatterns = ['Hausverwaltung', 'Immobilien', 'Wohnungsverwaltung', 'Verwaltung', 'Siedler', 'Mieter'];
+  } else if (queryLower.includes('arzt') || queryLower.includes('doctor')) {
+    namePatterns = ['Arzt', 'Praxis', 'Medizin'];
+  } else if (queryLower.includes('rechtsanwalt') || queryLower.includes('anwalt')) {
+    namePatterns = ['Rechtsanwalt', 'Anwalt', 'Kanzlei'];
+  } else {
+    namePatterns = [query];
+  }
+  
+  console.log(`OSM: Searching for patterns: ${namePatterns.join(', ')}`);
+  console.log(`OSM: Querying ${tiles.length} tiles with ${concurrency} strategies...`);
+  
+  // Process all tiles
+  for (let i = 0; i < tiles.length; i += concurrency) {
+    const batch = tiles.slice(i, i + concurrency);
+    const batchNum = Math.floor(i / concurrency) + 1;
+    const totalBatches = Math.ceil(tiles.length / concurrency);
     
-    // Longer delay between tiles (3 seconds) to respect rate limits
-    if (i > 0) {
-      console.log(`OSM: Waiting 3s before next tile...`);
-      await new Promise(r => setTimeout(r, 3000));
-    }
-    
-    console.log(`OSM: Processing tile ${tileNum}/${tiles.length}...`);
-    
-    const query = buildBBoxQuery(tile, tagFilter, escapedQuery);
-    
-    try {
-      const data = await runOverpassQuery(query, 25000);
-      console.log(`OSM: Tile ${tileNum}/${tiles.length} returned ${data.elements?.length || 0} results`);
+    // For each tile, run multiple query strategies in parallel
+    const tilePromises = batch.map(async (tile, idx) => {
+      const tileNum = i + idx + 1;
       
-      // Merge results, avoiding duplicates
-      for (const el of data.elements || []) {
-        if (!seenIds.has(el.id)) {
-          seenIds.add(el.id);
-          allElements.push(el);
+      // Run 3 different query strategies for this tile
+      const strategies = [
+        { name: 'tags', query: buildTagQuery(tile, 150) },
+        { name: 'names', query: buildNameQuery(tile, namePatterns, 150) },
+        { name: 'generic', query: buildGenericOfficeQuery(tile, 150) },
+      ];
+      
+      const strategyResults = await Promise.all(
+        strategies.map(async (strategy) => {
+          try {
+            const data = await runOverpassQuery(strategy.query, 20000);
+            return { strategy: strategy.name, elements: data.elements || [] };
+          } catch (err) {
+            return { strategy: strategy.name, elements: [] };
+          }
+        })
+      );
+      
+      const totalElements = strategyResults.reduce((sum, r) => sum + r.elements.length, 0);
+      console.log(`OSM: Tile ${tileNum}/${tiles.length} - ${totalElements} results (tags:${strategyResults[0].elements.length}, names:${strategyResults[1].elements.length}, generic:${strategyResults[2].elements.length})`);
+      
+      // Combine all elements
+      return strategyResults.flatMap(r => r.elements);
+    });
+    
+    const batchResults = await Promise.all(tilePromises);
+    
+    // Merge results, avoiding duplicates and filtering
+    for (const elements of batchResults) {
+      for (const el of elements) {
+        if (!el.tags?.name) continue;
+        if (seenIds.has(el.id)) continue;
+        
+        // For generic office query, filter by name relevance
+        if (!isPropertyManagement(el.tags.name) && 
+            !namePatterns.some(p => el.tags!.name!.toLowerCase().includes(p.toLowerCase()))) {
+          continue;
         }
+        
+        seenIds.add(el.id);
+        allElements.push(el);
       }
-    } catch (err) {
-      console.warn(`OSM: Tile ${tileNum}/${tiles.length} failed:`, err instanceof Error ? err.message : err);
-      // Continue with next tile even if this one failed
     }
     
-    // Stop early if we have enough results
-    if (allElements.length >= 200) {
-      console.log(`OSM: Reached 200 results, stopping early`);
-      break;
+    console.log(`OSM: Batch ${batchNum}/${totalBatches} complete. Total results: ${allElements.length}`);
+    
+    // Small delay between batches
+    if (i + concurrency < tiles.length) {
+      await new Promise(r => setTimeout(r, 200));
     }
   }
   
-  console.log(`OSM: Total unique results from tiles: ${allElements.length}`);
+  console.log(`OSM: Total unique results: ${allElements.length}`);
   return allElements;
 }
 
@@ -270,25 +322,21 @@ export async function scrapeOSM(
 ): Promise<ScrapedBusiness[]> {
   console.log(`OSM: Searching for "${query}" in "${location}"...`);
   
-  const tagFilter = inferOsmTagFilter(query);
-  const escapedQuery = query.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  
   const results: ScrapedBusiness[] = [];
   const seen = new Set<number>();
   
-  // Try to find bounding box for the location
   const locationKey = location.toLowerCase().replace(/[\s-]/g, '');
   const bbox = CITY_BOUNDING_BOXES[locationKey];
   
   if (bbox) {
-    console.log(`OSM: Found bounding box for ${location}, using tile-based search`);
+    console.log(`OSM: Found bounding box for ${location}, using multi-strategy tile search`);
     
-    // Split into tiles (4x4 grid = 16 tiles for a city)
-    const tiles = splitBoundingBox(bbox, 4, 4);
+    // 6x6 grid = 36 tiles for good coverage without too many API calls
+    const tiles = splitBoundingBox(bbox, 6, 6);
     console.log(`OSM: Split into ${tiles.length} tiles`);
     
     try {
-      const elements = await queryTilesWithConcurrency(tiles, tagFilter, escapedQuery, 3);
+      const elements = await queryTilesMultiStrategy(tiles, query, 3);
       
       for (const el of elements) {
         if (!el.tags?.name) continue;
@@ -324,37 +372,26 @@ export async function scrapeOSM(
       return results;
       
     } catch (err) {
-      console.warn(`OSM: Tile-based search failed, trying fallback:`, err);
+      console.warn(`OSM: Multi-strategy search failed:`, err);
     }
   } else {
     console.log(`OSM: No bounding box for ${location}, trying fallback search`);
   }
   
-  // Fallback: Global search without bounding box
+  // Fallback: Global search
   try {
-    console.log(`OSM: Trying fallback global search...`);
-    let fallbackOql: string;
-    
-    if (tagFilter) {
-      fallbackOql = `
-[out:json][timeout:20];
-(
-  node${tagFilter}["name"~"${escapedQuery}",i];
-  way${tagFilter}["name"~"${escapedQuery}",i];
-);
-out center tags 50;
-`;
-    } else {
-      fallbackOql = `
-[out:json][timeout:20];
+    const escapedQuery = query.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const fallbackOql = `
+[out:json][timeout:25];
 (
   node["name"~"${escapedQuery}",i]["office"];
-  node["name"~"${escapedQuery}",i]["amenity"];
+  node["name"~"${escapedQuery}",i]["shop"];
   way["name"~"${escapedQuery}",i]["office"];
+  node["office"="property_management"];
+  node["office"="estate_agent"];
 );
-out center tags 50;
+out center tags 100;
 `;
-    }
     
     const data = await runOverpassQuery(fallbackOql, 25000);
     
