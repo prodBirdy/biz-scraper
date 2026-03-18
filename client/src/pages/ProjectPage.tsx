@@ -185,10 +185,8 @@ export function ProjectPage() {
     <div className="space-y-6">
       {/* Back + Title */}
       <div className="flex items-center gap-3">
-        <Link href="/">
-          <a className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-back">
-            <ArrowLeft size={18} />
-          </a>
+        <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-back">
+          <ArrowLeft size={18} />
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight" data-testid="text-project-title">
@@ -249,7 +247,7 @@ export function ProjectPage() {
                 </div>
               ))}
             </div>
-            {sources.includes("google") && !process.env.GOOGLE_PLACES_API_KEY && (
+            {sources.includes("google") && !import.meta.env.VITE_GOOGLE_PLACES_API_KEY && (
               <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2 flex items-center gap-1">
                 ⚠️ Google Maps benötigt einen API Key (env: GOOGLE_PLACES_API_KEY)
               </p>

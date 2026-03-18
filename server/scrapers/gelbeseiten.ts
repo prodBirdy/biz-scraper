@@ -27,9 +27,10 @@ interface GsParameters {
 export async function scrapeGelbeSeiten(
   query: string,
   location: string,
-  maxPages = 3
+  maxPages: number = Number.MAX_SAFE_INTEGER
 ): Promise<ScrapedBusiness[]> {
   const results: ScrapedBusiness[] = [];
+  const seenIds = new Set<string>();
 
   for (let page = 1; page <= maxPages; page++) {
     try {
@@ -78,6 +79,19 @@ export async function scrapeGelbeSeiten(
             $el.find("[data-wipe-name='Titel']").text().trim();
 
           if (!name) return;
+          
+          // Get unique ID for deduplication
+          const sourceId =
+            $el.attr("data-realid") ||
+            $el.attr("data-teilnehmerid") ||
+            $el.attr("id")?.replace("treffer_", "");
+          
+          if (sourceId && seenIds.has(sourceId)) {
+            return; // Skip duplicate
+          }
+          if (sourceId) {
+            seenIds.add(sourceId);
+          }
 
           // ── Data extraction: Gelbe Seiten encodes structured data in data-parameters ──
           // The data-parameters JSON contains full contact details
@@ -118,9 +132,9 @@ export async function scrapeGelbeSeiten(
             }
           }
 
-          // Website: data-webseiteLink is base64 encoded URL
+          // Website: data-webseitelink is base64 encoded URL (note: cheerio normalizes to lowercase)
           let website: string | undefined;
-          const wsAttr = $el.find("[data-webseiteLink]").attr("data-webseiteLink");
+          const wsAttr = $el.find("[data-webseitelink]").attr("data-webseitelink");
           if (wsAttr) {
             const decoded = decodeBase64(wsAttr);
             if (decoded.startsWith("http")) website = decoded;
@@ -143,12 +157,6 @@ export async function scrapeGelbeSeiten(
             $el.find(".mod-Treffer__branche").text().trim() ||
             query;
 
-          // Source ID from article id="treffer_XXXXX" or data-teilnehmerid
-          const sourceId =
-            $el.attr("data-realid") ||
-            $el.attr("data-teilnehmerid") ||
-            $el.attr("id")?.replace("treffer_", "");
-
           results.push({
             name,
             address: street || undefined,
@@ -158,7 +166,7 @@ export async function scrapeGelbeSeiten(
             email: email || undefined,
             website: website || undefined,
             source: "gelbeseiten",
-            sourceId,
+            sourceId: sourceId || undefined,
             category: category || query,
           });
 

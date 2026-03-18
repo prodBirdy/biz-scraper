@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useTheme } from "./ThemeProvider";
 import { Sun, Moon, MapPin, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import PerplexityAttribution from "./PerplexityAttribution";
+
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
@@ -64,14 +64,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <MapPin size={12} />
             <span>Business Address Finder</span>
           </div>
-          <a
-            href="https://www.perplexity.ai/computer"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground transition-colors"
-          >
-            Created with Perplexity Computer
-          </a>
+
         </div>
       </footer>
     </div>
